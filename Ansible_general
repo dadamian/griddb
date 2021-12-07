@@ -1,0 +1,175 @@
+
+user osboxes, haslo osboxes.org
+target3 ma usera osboxes tez i haslo osboxes.org ale root ma haslo password
+
+
+jak visudo jest sla usera ansible:
+osboxes ALL=(ALL) NOPASSWD: ALL
+to dla bezpieczenstwa mozna zmienic PASSWD: ALL
+ale wtedy jak odpalam komende ansible:
+ansible -m command -a "vgs" Prod --become -K
+to opcje -K musze dac bo wtedy bede mogl wpisac haslo, jak jest NOPASSWD: ALL to wtedy tego -K nie daje bo moge z roota komendy odpalac
+=======================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+ansible szuka modulow tutaj:
+/usr/lib/python3.6/site-packages/ansible/modules
+pomoc odnosnie konkretnych modulow wywaluje tak np dla yum:
+ansible-doc yum
+ansible-playbook playbook.yml -C -to sprzwdzi czy sie wykona na naszych serverach ten playbook i co sie ewentualnie zmieni
+ansible-playbook --syntax-check playbook.yml -sprawdzi czy nie ma bleduw  kodzie yaml
+ansible-playbook --step playbook.yml -to step po stepie poleci i za kazdym bedzie pytal czy leciec kolejny task
+
+
+
+
+
+
+
+
+
+
+
+******************
+jak uzywac role (ale musi byc stworzony katalog "roles" i w nim katalog "nazwa_roli" w nim katalog tasks i w nim main.yml:
+-
+  name: Deploy a mysql DB
+  hosts: db_server
+  roles:
+    - python
+    - mysql_db
+
+******************
+jak ustawic ansibla zeby skrypt sprawdzal co iles czasu zamiast ciagle miec otwarte ssh polaczenie
+
+tasks:
+  - command: /opt/jakis_skrypt.py
+    async: 360 -to wskazuje ile czasu ba trwac czyli 6minut
+    poll: 60 -jak czesto ma ansible sprawdzac czy skrypt sie wykonal czyli tutaj 1minuta a default jest 10sek
+
+jesli mam kilka taskow to ansible bedzie czekal z pierwszym taskiem te 6minut i dopiero pozniej przejdzie do kolejnego taska jak taki jest w playbooku.
+jak ustawie "pool: 0" to ansible z automatu leci z nastepnym taskiem. ROzwiazaniem jest dodanie parametru register:
+
+tasks:
+  - command: /opt/jakis_skrypt.py
+    async: 360
+    poll: 0
+    register: webapp_result -to zapisuje ten task do zmiennej
+
+  - name: check status of a task
+    async_status: jid={{ webapp_result.ansible_job_id }} -ten modul async sprawdza status
+    register: job_result
+    until: job_result.finished
+    retries: 30
+
+110,248
+******************************
+Jinja2 templating:
+
+-
+  name: test template playbook
+  hosts: localhosts
+  vars:
+     my_name: damian lamch
+  tasks:
+   - debug:
+	msg: "My name is {{ my_name }}"
+
+jak deklarujemy zienne vars to musimy je zadeklarowac zanim ja uzyjemy jak wyzej, 
+{{ to jest Jinja2 template ogolnie wziete z pythona, ansible to tez uzywa
+
+{{ my_name | upper }} pokarze moje imie duzymi literami DAMIAN
+{{ my_name | lower }} pokarze moje imie malymi literami damian
+{{ my_name | title }} pokarze moje imie z malej literki Damian
+{{ my_name | replace ("Damian", "Sajmon") }} zmieni Damian na Sajmon
+{{ first_name | default("Lamch") }} {{ my_name }} Lamch Damian to pokarze
+
+filtry
+
+{{ [1,2,3]| min }}   => 1 -pokarze minimum z nawiasu
+{{ [1,2,3]| max }}   => 3 -pokarze maximum z nawiasu
+{{ [1,2,3,2]| unique }}   => 1,2,3 -pokarze nie powtarzajace sie z nawiasu
+{{ [1,2,3,4]| union( [4,5])}}   => 1,2,3,4,5 -to polaczy 
+{{ [1,2,3,4]| intersect( [4,5])}}   => 4 -pokarze tylko wspolne wartosci z dwoch nawiasow
+{{ 100 | random }}  => pokarze jakas liczbe  miedzy 0  a 100
+{{ ["The", "name", "is", "Bond"] | join(" ") }} => The name is Bond -polaczy to wszystkie wyrazy razem
+
+
+Filtry -pliki
+
+{{ "/etc/hosts" | basename }}  => hosts
+{{ "c:\windows\hosts" | win_basename }} => hosts
+{{ "c:\windows\hosts" | win_splitdrive }} => ["c:", "\windows\hosts"]
+{{ "c:\windows\hosts" | win_splitdrive | first }} => "c:"
+{{ "c:\windows\hosts" | win_splitdrive | last }} => "\windows\hosts"
+
+jinja.pocoo.org -tutaj sa rozne filtry z jinja2
+docs.ansible.com -tutaj tez sa przyklady filtrow: playbooks >> templating >> formating data
+
+
+PRZYKLAD jeszcze jeden na templating:
+-
+  name: Install Dependencies
+  hosts: localhost
+  vars:
+    web_dependencies:
+         - python
+         - python-setuptools
+         - python-dev
+         - build-essential
+         - python-pip-
+         - python-mysqldb
+    sql_dependencies:
+         - python
+         - python-mysqldb
+  tasks:
+  - name: Install dependencies
+    apt: name='{{ item }}' state=installed
+    with_items: '{{ web_dependencies | union( sql_dependencies ) }}'
+
+powyzsze zainstaluje pojedynczo pakiety z obu zamiennych, w sensie bez powtarzajacych sie
+
+
+PRZYKLAD na uzycie random przy tworzeniu plikow(do nazwy pliku bedzie dodany numer od 0 do 1000):
+-
+  name: Generate random file name
+  hosts: localhost
+  tasks:
+  - name: Install dependencies
+    file:
+      path: /tmp/random_file{{ 1000 | random }}
+      state: touch
+
+PRZYKLAD sprawdzi ten ip czy jest ok, jak nie jest ok to wyswietli false
+
+-
+  name: Test valid IP Address
+  hosts: localhost
+  vars:
+    ip_address: 192.168.1.6
+  tasks:
+  - name: Test IP Address
+    debug:
+      msg: IP Address = {{ ip_address | ipaddr }}
+
+**********************************************
+mastering ansible
+*********************************************
+- hosts: all
+  become: true
+  tasks:
+	- name: install web components
+	  apt: name={{item}} state=present update_cache=yes
+	  with_items:
+	    - jakies tam pakiety
